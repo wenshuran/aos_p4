@@ -1,2 +1,0 @@
-# Hashes of file build rules.
-57bd4ef2a7df9776f245d58b68db2d86 src/masterworker.pb.cc
