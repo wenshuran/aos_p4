@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <iostream>
+#include <sys/stat.h>  
 
 #include <math.h>
 #include "mapreduce_spec.h"
@@ -30,14 +31,9 @@ inline bool shard_files(const MapReduceSpec& mr_spec, std::vector<FileShard>& fi
 	std::FILE *fp;
 	for (int i = 0; i < num_files; i++) {
           std::string filename = mr_spec.input_files[i];
-          fp = fopen(filename.c_str(),"rb");
-          if(!fp){
-               printf("no such file!\n");
-               return false; 
-          }
-          fseek(fp, 0, SEEK_END);
-          long size = ftell(fp);
-          fclose(fp);
+          struct stat statbuf;  
+          stat(filename.c_str(),&statbuf);  
+          int size=statbuf.st_size;  
           file_size[i] = size;
           sum_size += size;
 	}

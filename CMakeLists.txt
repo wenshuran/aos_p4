@@ -1,6 +1,6 @@
 # CMakeLists.txt
 cmake_minimum_required(VERSION 3.10)
-set (CMAKE_TOOLCHAIN_FILE "$ENV{HOME}/vcpkg/scripts/buildsystems/vcpkg.cmake")
+set (CMAKE_TOOLCHAIN_FILE "/home/wenshuran/Desktop/vcpkg/scripts/buildsystems/vcpkg.cmake")
 set (CMAKE_CXX_STANDARD 11)
 
 project(project4)
