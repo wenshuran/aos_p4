@@ -10,16 +10,15 @@
 
 /* CS6210_TASK: Create your own data structure here, where you can hold information about file splits,
      that your master would use for its own bookkeeping and to convey the tasks to the workers for mapping */
-struct FileShard {
-     std::vector<FileInfo> files;
-};
-
 struct FileInfo{
      std::string filename;
      int start;
      int end;
 };
 
+struct FileShard {
+     std::vector<FileInfo> files;
+};
 
 
 /* CS6210_TASK: Create fileshards from the list of input files, map_kilobytes etc. using mr_spec you populated  */ 

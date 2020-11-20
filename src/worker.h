@@ -5,7 +5,12 @@
 #include <fstream>
 #include <sstream>
 #include <iostream>
+#include <masterworker.grpc.pb.h>
+#include <grpcpp/grpcpp.h>
 
+
+extern std::shared_ptr<BaseMapper> get_mapper_from_task_factory(const std::string& user_id);
+extern std::shared_ptr<BaseReducer> get_reducer_from_task_factory(const std::string& user_id);
 
 /* CS6210_TASK: Handle all the task a Worker is supposed to do.
 	This is a big task for this project, will test your understanding of map reduce */
@@ -18,16 +23,16 @@ class Worker {
 		/* DON'T change this function's signature */
 		bool run();
 
-		void map_work(ServerContext *context, const MapperInfo *request, InterimFile *reply){
-			auto mapper = get_mapper_from_task_factory(request.user_id);
-			for(auto& file_info : request.file_infos){
+		void map_work(grpc::ServerContext *context, const masterworker::MapperInfo *request, masterworker::MapperReply *reply){
+			auto mapper = get_mapper_from_task_factory(request->user_id());
+			for(masterworker::FileInfo file_info : request->file_infos()){
 				int current_size = 0;
-				std::ifstream is(file_info.filename);
+				std::ifstream is(file_info.filename());
 				std::string buf;
 				if (is.is_open()) {
-					is.seekg(file_info.start);
-					buf.resize(size);
-					is.read(&buf[0], size);
+					is.seekg(file_info.start());
+					buf.resize(file_info.end() - file_info.start());
+					is.read(&buf[0], file_info.end() - file_info.start());
 					std::stringstream ss(buf);
 					std::string line;
 					while (std::getline(ss, line)) {
@@ -38,26 +43,27 @@ class Worker {
 			std::vector<std::pair<std::string, std::string>>& pairs = mapper->impl_->keyval_pair;
 
 			//produce inter file
-			std::ofstream intermediate_file;
-			intermediate_file.open("intermediate_file", std::ios::app || std::ios::);
-			if (intermediate_file.is_open()) {
+			std::ofstream os;
+			std::string buffer_filename("mapper " + address_);
+			os.open(buffer_filename, std::ios::app);
+			if (os.is_open()) {
 				for (auto& pair : pairs) {
-					intermediate_file << pair.first << "," << pair.second << "\n";
+					os << pair.first << "," << pair.second << "\n";
 				}
-				intermediate_file.close();
+				os.close();
 			}
-			reply->set_worker_addr(address_);
+			reply->set_address(address_);
+			reply->set_buffer_file(buffer_filename);
 		}
 
-		void reduce_work(ServerContext *context, const InterimFile *request, OutputFile *reply){
-			auto reducer = get_reducer_from_task_factory(request.user_id);
-			reducer->reduce("dummy", std::vector<std::string>({"1", "1"}));
-			std::ifstream file("intermediate_file");
+		void reduce_work(grpc::ServerContext *context, const masterworker::ReducerInfo *request, masterworker::ReducerReply *reply){
+			auto reducer = get_reducer_from_task_factory(request->user_id());
+			std::ifstream is(request->buffer_file());
 			std::string line;
 
 			std::string key_prev;
 			std::vector<std::string> vals;
-			while (std::getline(file, line)) {
+			while (std::getline(is, line)) {
 				std::istringstream line_stream(line);
 				std::string key;
 				if (std::getline(line_stream, key, ',')) {
@@ -75,20 +81,17 @@ class Worker {
 					}
 				}
 			}
-		std::vector<std::pair<std::string, std::string> >& vec = reducer->impl_->keyval_pair;
-		std::string output_filename("./output/output_" + ip_addr_port);
-		std::ofstream output_file(output_filename);
-		std::vector<std::pair<std::string, std::string> >::iterator it;
-		if (output_file.is_open()) {
-			for (it = vec.begin(); it != vec.end(); it++) {
-				output_file << (*it).first << "," << (*it).second << "\n";
-			}
-			output_file.close();
-		} else {
-			std::cout << "failed to open file " << output_filename << "\n";
-		}
-		reply->set_worker_addr(ip_addr_port);
-		reply->set_filename(output_filename);
+			std::vector<std::pair<std::string, std::string> >& pairs = reducer->impl_->keyval_pair;
+
+			std::ofstream os(request->output_dir()+ address_);
+			std::vector<std::pair<std::string, std::string> >::iterator it;
+			if (os.is_open()) {
+				for (auto& pair : pairs) {
+						os << pair.first << " " << pair.second << "\n";
+					}
+				os.close();
+			} 
+			reply->set_address(address_);
 
 		}
 
@@ -106,8 +109,6 @@ Worker::Worker(std::string ip_addr_port)
 
 }
 
-extern std::shared_ptr<BaseMapper> get_mapper_from_task_factory(const std::string& user_id);
-extern std::shared_ptr<BaseReducer> get_reducer_from_task_factory(const std::string& user_id);
 
 /* CS6210_TASK: Here you go. once this function is called your woker's job is to keep looking for new tasks 
 	from Master, complete when given one and again keep looking for the next one.
@@ -115,37 +116,14 @@ extern std::shared_ptr<BaseReducer> get_reducer_from_task_factory(const std::str
 	BaseReduer's member BaseReducerInternal impl_ directly, 
 	so you can manipulate them however you want when running map/reduce tasks*/
 bool Worker::run() {
-	Mapper::AsyncService service;
-	ServerBuilder builder;
-	builder.AddListeningPort(address_, grpc::InsecureChannelCredentials());
-	builder.RegisterAsyncService(&service);
+	masterworker::Worker::AsyncService service;
+	grpc::ServerBuilder builder;
+	builder.AddListeningPort(address_, grpc::InsecureServerCredentials());
+	builder.RegisterService(&service);
 	auto cq = builder.AddCompletionQueue();
 	auto server = builder.BuildAndStart();
 
-	ServerContext context;
-	HelloRequest request;
-	ServerAsyncResponseWriter<HelloReply> responder;
-	service.RequestSayHello(&context, &request, &responder, &cq, &cq, (void*)1);
-
-	HelloReply reply;
-	Status status;
-	void* got_tag;
-	bool ok = false;
-	cq.Next(&got_tag, &ok);
-	if (ok && got_tag == (void*)1) {
-		// set reply and status
-		responder.Finish(reply, status, (void*)2);
-	}
-
-	void* got_tag;
-	bool ok = false;
-	cq.Next(&got_tag, &ok);
-	if (ok && got_tag == (void*)2) {
-		// clean up
-	}
-	/*  Below 5 lines are just examples of how you will call map and reduce
-		Remove them once you start writing your own logic */ 
-	std::cout << "worker.run(), I 'm not ready yet" <<std::endl;
+	std::cout << "Address " << address_ << " is working!" << std::endl;
 	
 	
 	return true;

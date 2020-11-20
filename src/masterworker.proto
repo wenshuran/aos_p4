@@ -2,27 +2,33 @@ syntax = "proto3";
 
 package masterworker;
 
-service Mapper{
-    rpc mapper_word(MapperInfo) returns (IntermediateFile) {}
-	rpc reducer_word(IntermediateFile) returns (ReducerReturn) {}
+service Worker{
+    rpc mapper_work(MapperInfo) returns (MapperReply) {}
+	rpc reducer_work(ReducerInfo) returns (ReducerReply) {}
 }
 
 message MapperInfo{
     string user_id = 1;
-    reapeated FileInfo file_infos = 2;
+    repeated FileInfo file_infos = 3;
 }
 
 message FileInfo{
     string filename = 1;
-    int start =2;
-    int end = 3;
+    int32 start =2;
+    int32 end = 3;
 }
 
-message IntermediateFile{
+message MapperReply{
+    string address = 1; 
+    string buffer_file = 2;
+}
+
+message ReducerInfo{
     string user_id = 1;
-    string address = 2; 
+    string buffer_file = 2;
+    string output_dir = 3;
 }
 
-message ReducerReturn{
+message ReducerReply{
     string address = 1;
 }
